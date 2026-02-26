@@ -189,6 +189,24 @@ def profile_sidebar():
 
     profile = st.session_state.profile
 
+    hype_key = "hype_min_energy_slider"
+    chill_key = "chill_max_energy_slider"
+
+    if hype_key not in st.session_state:
+        st.session_state[hype_key] = max(1, min(10, int(profile.get("hype_min_energy", 7))))
+    if chill_key not in st.session_state:
+        st.session_state[chill_key] = max(1, min(10, int(profile.get("chill_max_energy", 3))))
+
+    def _sync_from_hype_change():
+        hype_value = int(st.session_state[hype_key])
+        if st.session_state[chill_key] > hype_value:
+            st.session_state[chill_key] = hype_value
+
+    def _sync_from_chill_change():
+        chill_value = int(st.session_state[chill_key])
+        if chill_value > st.session_state[hype_key]:
+            st.session_state[hype_key] = chill_value
+
     profile["name"] = st.sidebar.text_input(
         "Profile name",
         value=str(profile.get("name", "")),
@@ -196,24 +214,33 @@ def profile_sidebar():
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        profile["hype_min_energy"] = st.sidebar.slider(
+        st.sidebar.slider(
             "Hype min energy",
             min_value=1,
             max_value=10,
-            value=int(profile.get("hype_min_energy", 7)),
+            key=hype_key,
+            on_change=_sync_from_hype_change,
         )
     with col2:
-        profile["chill_max_energy"] = st.sidebar.slider(
+        st.sidebar.slider(
             "Chill max energy",
             min_value=1,
             max_value=10,
-            value=int(profile.get("chill_max_energy", 3)),
+            key=chill_key,
+            on_change=_sync_from_chill_change,
         )
+
+    profile["hype_min_energy"] = int(st.session_state[hype_key])
+    profile["chill_max_energy"] = int(st.session_state[chill_key])
+
+    genre_options = ["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"]
+    current_genre = str(profile.get("favorite_genre", "rock"))
+    genre_index = genre_options.index(current_genre) if current_genre in genre_options else 0
 
     profile["favorite_genre"] = st.sidebar.selectbox(
         "Favorite genre",
-        options=["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"],
-        index=0,
+        options=genre_options,
+        index=genre_index,
     )
 
     profile["include_mixed"] = st.sidebar.checkbox(
@@ -253,6 +280,9 @@ def add_song_sidebar():
             all_songs = st.session_state.songs[:]
             all_songs.append(normalized)
             st.session_state.songs = all_songs
+            st.sidebar.success("Song added.")
+        else:
+            st.sidebar.warning("Please provide both title and artist.")
 
 
 def playlist_tabs(playlists):
@@ -276,8 +306,17 @@ def render_playlist(label, songs):
         st.write("No songs in this playlist.")
         return
 
-    query = st.text_input(f"Search {label} playlist by artist", key=f"search_{label}")
-    filtered = search_songs(songs, query, field="artist")
+    search_field = st.selectbox(
+        f"Search field ({label})",
+        options=["artist", "title", "genre"],
+        index=0,
+        key=f"search_field_{label}",
+    )
+    query = st.text_input(
+        f"Search {label} playlist by {search_field}",
+        key=f"search_{label}",
+    )
+    filtered = search_songs(songs, query, field=search_field)
 
     if not filtered:
         st.write("No matching songs.")
@@ -332,7 +371,7 @@ def stats_section(playlists):
 
     col4, col5, col6 = st.columns(3)
     col4.metric("Mixed songs", stats["mixed_count"])
-    col5.metric("Hype ratio", f"{stats['hype_ratio']:.2f}")
+    col5.metric("Hype ratio", f"{stats['hype_ratio']:.1f}%")
     col6.metric("Average energy", f"{stats['avg_energy']:.2f}")
 
     top_artist = stats["top_artist"]
@@ -382,6 +421,20 @@ def main():
         "An AI assistant tried to build a smart playlist engine. "
         "The code runs, but the behavior is a bit unpredictable."
     )
+
+    with st.expander("How classification works"):
+        st.write(
+            "Each song is checked for hype and chill evidence. "
+            "Hype evidence: high energy, favorite genre match, or hype keywords. "
+            "Chill evidence: low energy or chill keywords."
+        )
+        st.write(
+            "Classification checks Hype first, then Chill. "
+            "Songs that match neither rule go to Mixed."
+        )
+        st.write(
+            "Both energy sliders support 1-10, and they auto-sync so Chill max does not exceed Hype min."
+        )
 
     init_state()
     profile_sidebar()
